@@ -62,8 +62,9 @@ def main():
     automl.fit(X_train, y_train)
     
     # Get best model performance
-    best_score = automl.best_score_
-    best_model = automl.best_model_type_
+    best_row = automl.leaderboard_.iloc[0]
+    best_model = best_row['model']
+    best_score = best_row['score']
     print(f"Best model: {best_model}")
     print(f"Best CV score: {best_score:.3f}")
     

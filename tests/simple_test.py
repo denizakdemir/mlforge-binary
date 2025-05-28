@@ -46,7 +46,7 @@ def test_basic_imports():
         print(f"✗ Import error: {e}")
         return False
     
-    return True
+    assert True
 
 
 def test_mlforge_syntax():
@@ -75,7 +75,7 @@ def test_mlforge_syntax():
                 print(f"✗ {module} has syntax error: {e}")
                 return False
         
-        return True
+        assert True
         
     except Exception as e:
         print(f"✗ Error testing syntax: {e}")

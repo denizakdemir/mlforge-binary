@@ -541,8 +541,15 @@ class EnsembleClassifier(BaseEstimator, ClassifierMixin):
         estimators = []
         
         for model_name in self.models:
-            params = get_default_params(model_name, self.random_state)
-            model = ModelWrapper(model_name, **params)
+            # Extract base model name by removing numeric suffixes (e.g., "xgboost_2" -> "xgboost")
+            # But preserve compound names like "extra_trees", "random_forest", etc.
+            base_model_name = model_name
+            if '_' in model_name:
+                parts = model_name.split('_')
+                if parts[-1].isdigit():  # Only remove if last part is a number
+                    base_model_name = '_'.join(parts[:-1])
+            params = get_default_params(base_model_name, self.random_state)
+            model = ModelWrapper(base_model_name, **params)
             estimators.append((model_name, model))
             
         self.ensemble_ = VotingClassifier(
@@ -560,8 +567,15 @@ class EnsembleClassifier(BaseEstimator, ClassifierMixin):
         base_estimators = []
         
         for model_name in self.models:
-            params = get_default_params(model_name, self.random_state)
-            model = ModelWrapper(model_name, **params)
+            # Extract base model name by removing numeric suffixes (e.g., "xgboost_2" -> "xgboost")
+            # But preserve compound names like "extra_trees", "random_forest", etc.
+            base_model_name = model_name
+            if '_' in model_name:
+                parts = model_name.split('_')
+                if parts[-1].isdigit():  # Only remove if last part is a number
+                    base_model_name = '_'.join(parts[:-1])
+            params = get_default_params(base_model_name, self.random_state)
+            model = ModelWrapper(base_model_name, **params)
             base_estimators.append((model_name, model))
         
         # Create meta-learner

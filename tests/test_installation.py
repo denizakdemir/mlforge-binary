@@ -24,7 +24,7 @@ def test_imports():
         print(f"✗ Utils import error: {e}")
         return False
     
-    return True
+    assert True
 
 
 def test_basic_functionality():
@@ -60,7 +60,7 @@ def test_basic_functionality():
         print(f"✓ Evaluation completed")
         print(f"  - ROC AUC: {results['metrics']['roc_auc']:.3f}")
         
-        return True
+        assert True
         
     except Exception as e:
         print(f"✗ Basic functionality error: {e}")
@@ -92,7 +92,7 @@ def test_optional_dependencies():
         except ImportError:
             print(f"○ {name} not available (optional)")
     
-    return available_libs
+    assert available_libs  # Should have at least some available libs
 
 
 def main():

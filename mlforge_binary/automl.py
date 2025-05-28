@@ -307,10 +307,16 @@ Top 10 Models:")
         
         # Create ensemble using voting with unique model names
         model_names = []
+        seen_models = {}
         for i, config in enumerate(top_configs):
             base_model = config.get('model', 'logistic')
-            # Make names unique by adding index if needed
-            unique_name = f"{base_model}_{i}" if base_model in model_names else base_model
+            # Create unique name for sklearn voting ensemble
+            if base_model in seen_models:
+                seen_models[base_model] += 1
+                unique_name = f"{base_model}_{seen_models[base_model]}"
+            else:
+                seen_models[base_model] = 0
+                unique_name = base_model
             model_names.append(unique_name)
         
         self.ensemble_model_ = BinaryClassifier(
