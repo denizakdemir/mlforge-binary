@@ -43,16 +43,19 @@ mypy mlforge_binary/
 
 ### Running Examples
 ```bash
-# Basic usage example
+# Basic usage examples
 python examples/basic_usage.py
-
-# Quick demo
 python examples/quick_demo.py
+
+# XAI (Explainable AI) examples
+python examples/xai_demo.py                    # Basic XAI with SHAP and LIME
+python examples/xai_mixed_data_demo.py         # XAI with mixed data types
+python examples/xai_original_features_demo.py  # Advanced: Original feature mapping
 ```
 
 ## Architecture Overview
 
-MLForge-Binary is a scikit-learn compatible binary classification library with automatic preprocessing and model selection capabilities.
+MLForge-Binary is a scikit-learn compatible binary classification library with automatic preprocessing, model selection, and advanced XAI (Explainable AI) capabilities.
 
 ### Core Components
 
@@ -67,6 +70,12 @@ MLForge-Binary is a scikit-learn compatible binary classification library with a
 - `explainer.py`: Model interpretability using SHAP and LIME
 - `fairness.py`: Bias detection and fairness metrics
 - `utils.py`: Validation, serialization, timing utilities
+
+**XAI (Explainable AI) Features:**
+- Original feature mapping: Maps dummy variables back to business variables
+- Waterfall plots: Individual predictions with actual variable values
+- SHAP integration: Categorical variable support with aggregation
+- Category analysis: Approval rates and impact breakdowns
 
 ### Key Design Patterns
 

@@ -47,7 +47,12 @@ score = clf.score(X_test, y_test)
 - **AutoML**: Automatic model selection and hyperparameter tuning
 - **Ensemble methods**: Voting and stacking classifiers
 - **Model evaluation**: Comprehensive metrics and visualizations
-- **Model explainability**: Feature importance and SHAP values
+- **🎯 Advanced XAI (Explainable AI)**: 
+  - Feature importance mapped to original variables
+  - SHAP analysis with categorical variable support
+  - Waterfall plots showing actual variable values
+  - Category-level impact analysis
+  - Business-friendly explanations
 - **Production ready**: Model persistence, monitoring, and deployment utilities
 
 ## 📖 Examples
@@ -94,6 +99,54 @@ results = quick_experiment(X, y, test_size=0.2, random_state=42)
 print(results)
 ```
 
+### 🎯 Explainable AI (XAI) Examples
+
+#### Feature Importance with Original Variables
+
+```python
+from mlforge_binary import BinaryClassifier
+
+# Train model with mixed data types
+clf = BinaryClassifier(model='random_forest', explain=True)
+clf.fit(X_train, y_train)
+
+# Get feature importance mapped to original variables
+# (not dummy/encoded variables)
+explanations = clf.explain()
+print("Feature Importance (Original Variables):")
+for feature, importance in explanations['feature_importance'].items():
+    print(f"  {feature}: {importance:.4f}")
+```
+
+#### SHAP Analysis with Categorical Variables
+
+```python
+# Advanced XAI analysis with SHAP
+# Shows categorical variables with their actual values
+# Example output:
+# - education: Bachelor Degree → +0.052 impact
+# - employment_status: Full-time → +0.023 impact  
+# - annual_income: $65,000 → +0.087 impact
+
+# Run comprehensive XAI examples
+python examples/xai_demo.py                    # Basic XAI
+python examples/xai_mixed_data_demo.py         # Mixed data types
+python examples/xai_original_features_demo.py  # Original feature mapping
+```
+
+#### Waterfall Plots for Individual Predictions
+
+```python
+# Waterfall plots show step-by-step prediction explanation
+# with actual variable values displayed:
+# 
+# Expected Value (50.0%) 
+#   → education: PhD (+0.045)
+#   → annual_income: $85,000 (+0.123) 
+#   → debt_to_income: 25.0% (-0.067)
+#   → Final Prediction: 78.3% (Approved)
+```
+
 ## 🛠️ Development
 
 ### Run Examples
@@ -101,6 +154,12 @@ print(results)
 ```bash
 # Basic usage examples
 python examples/basic_usage.py
+python examples/quick_demo.py
+
+# XAI (Explainable AI) examples
+python examples/xai_demo.py                    # Basic XAI with SHAP and LIME
+python examples/xai_mixed_data_demo.py         # XAI with mixed data types  
+python examples/xai_original_features_demo.py  # Advanced: Original feature mapping
 ```
 
 ### Testing
@@ -128,8 +187,11 @@ See `requirements.txt` for full dependencies.
 - lightgbm (for LightGBM models)  
 - catboost (for CatBoost models)
 - optuna (for hyperparameter tuning)
-- shap (for model explanations)
+- shap (for SHAP explanations and waterfall plots)
+- lime (for LIME explanations)
 - plotly (for visualizations)
+- matplotlib (for plots)
+- seaborn (for enhanced visualizations)
 
 ## 📊 Project Structure
 
@@ -143,8 +205,38 @@ mlforge_binary/
 ├── evaluation.py      # Model evaluation
 ├── explainer.py       # Model explanations
 ├── utils.py           # Utility functions
-└── ...
+├── fairness.py        # Fairness analysis
+├── monitor.py         # Model monitoring
+└── cli.py             # Command line interface
+
+examples/
+├── basic_usage.py                  # Basic usage examples
+├── quick_demo.py                   # Quick demonstration
+├── xai_demo.py                     # Basic XAI examples
+├── xai_mixed_data_demo.py          # XAI with mixed data types
+└── xai_original_features_demo.py   # Advanced XAI with feature mapping
+
+plots/                              # Generated visualization outputs
+tests/                              # Test suite
+docs/                               # Documentation
 ```
+
+## 🎯 Key XAI Features
+
+### Original Feature Mapping
+- **Problem**: Traditional XAI shows importance for dummy variables (`education_bachelor`, `education_master`)
+- **Solution**: MLForge-Binary maps back to original variables (`education` with category breakdown)
+- **Benefit**: Business stakeholders see interpretable variable names
+
+### Waterfall Plots with Variable Values
+- Shows actual values: `annual_income: $65,000`, `education: PhD`
+- Step-by-step prediction explanation from baseline to final decision
+- Category-level analysis for categorical variables
+
+### Comprehensive SHAP Integration
+- Automatic aggregation of dummy variable SHAP values
+- Category impact analysis with approval rate comparisons
+- Business-friendly explanations and visualizations
 
 ## 📄 License
 
