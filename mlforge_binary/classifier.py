@@ -220,6 +220,9 @@ class BinaryClassifier(BaseEstimator, ClassifierMixin):
                 )
                 self.model_.fit(X_processed, y_processed)
             
+            # Set fitted flag before calculating metrics and optimizing threshold
+            self.is_fitted_ = True
+            
             # Optimize threshold if requested
             if self.optimize_threshold:
                 self.optimal_threshold_ = self._optimize_threshold(X_processed, y_processed)
@@ -228,17 +231,26 @@ class BinaryClassifier(BaseEstimator, ClassifierMixin):
             self._log("Calculating training metrics...")
             self._calculate_training_metrics(X_processed, y_processed)
             
-            self.is_fitted_ = True
-            
         self._log(f"Training completed in {timer.elapsed_time:.2f} seconds")
         return self
     
-    def _calculate_training_metrics(self, X: np.ndarray, y: np.ndarray) -> None:
-        """Calculate metrics on training data."""
+    def _calculate_training_metrics(self, X_processed: np.ndarray, y: np.ndarray) -> None:
+        """Calculate metrics on training data using processed features."""
         try:
-            y_pred = self.predict(X)
-            y_proba = self.predict_proba(X)
+            # Check if model has predict_proba method
+            if hasattr(self.model_, 'predict_proba'):
+                y_proba = self.model_.predict_proba(X_processed)
+                if y_proba.shape[1] == 2:
+                    y_pred = (y_proba[:, 1] >= self.optimal_threshold_).astype(int)
+                else:
+                    # For multi-class, just take argmax
+                    y_pred = np.argmax(y_proba, axis=1)
+            else:
+                # Fallback to predict method
+                y_pred = self.model_.predict(X_processed)
+                y_proba = None
             
+            from .evaluation import MetricsCalculator
             metrics_calc = MetricsCalculator()
             self.training_metrics_ = metrics_calc.calculate_all_metrics(
                 y, y_pred, y_proba
