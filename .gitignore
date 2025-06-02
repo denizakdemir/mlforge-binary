@@ -6,6 +6,11 @@ __pycache__/
 # C extensions
 *.so
 
+# data folder
+data/
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
 # Distribution / packaging
 .Python
 build/

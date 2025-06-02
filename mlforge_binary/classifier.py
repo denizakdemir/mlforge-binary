@@ -301,7 +301,7 @@ class BinaryClassifier(BaseEstimator, ClassifierMixin):
         
         return evaluator.evaluate(
             model=self,
-            X_test=X_test.values,
+            X_test=X_test,
             y_test=y_test.values,
             model_name=model_name,
             generate_report=generate_report,

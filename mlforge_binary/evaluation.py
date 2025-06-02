@@ -510,7 +510,7 @@ class ComprehensiveEvaluator:
     
     def evaluate(self, 
                 model,
-                X_test: np.ndarray,
+                X_test: Union[np.ndarray, pd.DataFrame],
                 y_test: np.ndarray,
                 model_name: str = "Binary Classifier",
                 generate_report: bool = False,
