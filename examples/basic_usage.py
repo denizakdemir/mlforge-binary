@@ -1,5 +1,20 @@
 """
 Basic usage example for MLForge-Binary
+
+This example demonstrates the core functionality of MLForge-Binary, including:
+- Basic model training and prediction
+- Model evaluation and metrics
+- XAI (Explainable AI) features with global and instance-level explanations
+- Advanced customization options
+- Ensemble models
+- Model comparison
+- AutoML functionality
+- Production deployment features
+
+The example showcases both global model explanations (feature importance) and
+instance-level explanations for individual predictions using:
+- clf.explain() - For global model explanations
+- clf.explain_instance() - For explaining individual predictions
 """
 
 import numpy as np
@@ -47,7 +62,7 @@ def example_basic_usage():
     predictions = clf.predict_proba(X_test)
     binary_predictions = clf.predict(X_test)
     
-    # Get insights
+    # Get global insights (feature importance)
     explanations = clf.explain()
     evaluation_results = clf.evaluate(X_test, y_test)
     
@@ -58,6 +73,25 @@ def example_basic_usage():
     if 'feature_importance' in explanations:
         for feature, importance in list(explanations['feature_importance'].items())[:5]:
             print(f"  {feature}: {importance:.3f}")
+    
+    # Get instance-level explanations for a single prediction
+    print("\nExplaining a single prediction:")
+    instance_idx = 0
+    instance = X_test.iloc[[instance_idx]]
+    instance_prediction = clf.predict(instance)[0]
+    instance_probability = clf.predict_proba(instance)[0, 1]
+    
+    # Get instance explanation
+    instance_explanation = clf.explain_instance(instance)
+    
+    print(f"Prediction for instance {instance_idx}: {instance_prediction} (probability: {instance_probability:.3f})")
+    
+    if 'contribution_summary' in instance_explanation:
+        print("\nTop contributing features:")
+        contributions = instance_explanation['contribution_summary']
+        for feature, contribution in list(contributions.items())[:3]:
+            direction = "increases" if contribution > 0 else "decreases"
+            print(f"  {feature}: {contribution:+.3f} ({direction} probability)")
     
     print("\n")
 
@@ -141,12 +175,12 @@ def example_model_comparison():
     X, y = create_sample_data()
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
     
-    # Compare models
+    # Compare models - avoid using 'auto' which may cause issues in ensemble creation
     leaderboard = compare_models(
         X_train, y_train, X_test, y_test,
-        models=['auto', 'xgboost', 'catboost', 'logistic'],
+        models=['random_forest', 'xgboost', 'lightgbm', 'logistic'],  # Changed models to avoid auto
         metrics=['roc_auc', 'f1', 'brier_score'],
-        cv=5,
+        cv=3,  # Reduced for speed
         include_preprocessing_variants=True
     )
     
@@ -163,23 +197,34 @@ def example_automl():
     # Create sample data
     X, y = create_sample_data()
     
-    # Quick experiment (5 minutes)
-    results = quick_experiment(X, y, time_budget=300)
+    # Quick experiment (30 seconds)
+    results = quick_experiment(
+        X, y, 
+        time_budget=30  # Reduced to 30 seconds
+    )
     
     print("Quick AutoML Results:")
     print(results['leaderboard'].to_string(index=False, float_format=lambda x: f'{x:.4f}'))
     print(f"\nBest model test ROC AUC: {results['test_metrics']['roc_auc']:.4f}")
     
-    # Full AutoML with more time
-    automl = AutoML(time_budget=600, ensemble_size=3)  # 10 minutes
-    automl.fit(X, y)
+    # Full AutoML with more time but minimal configuration
+    automl = AutoML(
+        time_budget=60,  # Reduced to 60 seconds for quicker execution
+        ensemble_size=2  # Reduced ensemble size
+    )
     
-    print("\nFull AutoML Leaderboard:")
-    print(automl.leaderboard_.head().to_string(index=False, float_format=lambda x: f'{x:.4f}'))
-    
-    # Get best model
-    best_model = automl.get_best_model()
-    print(f"\nBest model configuration: {best_model.get_params()}")
+    try:
+        automl.fit(X, y)
+        
+        print("\nFull AutoML Leaderboard:")
+        print(automl.leaderboard_.head().to_string(index=False, float_format=lambda x: f'{x:.4f}'))
+        
+        # Get best model
+        best_model = automl.get_best_model()
+        print(f"\nBest model configuration: {best_model.get_params()}")
+    except Exception as e:
+        print(f"\nAutoML encountered an error: {e}")
+        print("This can happen with some model combinations in AutoML.")
     
     print("\n")
 
@@ -196,7 +241,8 @@ def example_production_features():
     clf = BinaryClassifier(
         model="auto", 
         calibrate=True,
-        optimize_threshold=True
+        optimize_threshold=True,
+        explain=True  # Enable XAI features
     )
     clf.fit(X_train, y_train)
     
@@ -215,9 +261,49 @@ def example_production_features():
     print(f"Predictions shape: {predictions.shape}")
     print(f"Probabilities shape: {probabilities.shape}")
     
-    # Model explanations
-    explanations = loaded_clf.explain()
-    print(f"Number of important features: {len(explanations.get('feature_importance', {}))}")
+    # Global model explanations
+    global_explanations = loaded_clf.explain()
+    print(f"Number of important features: {len(global_explanations.get('feature_importance', {}))}")
+    
+    # Instance-level explanations (for deployment)
+    print("\nInstance-level explanations (production example):")
+    
+    # Simulate incoming prediction request
+    new_instance = X_test.iloc[[0]]  # First test instance for demonstration
+    
+    # Make prediction
+    prediction = loaded_clf.predict(new_instance)[0]
+    probability = loaded_clf.predict_proba(new_instance)[0, 1]
+    print(f"Prediction: {prediction} (probability: {probability:.4f})")
+    
+    # Explain this specific prediction
+    instance_explanation = loaded_clf.explain_instance(new_instance)
+    
+    # Use explanation for business decision logic
+    print("Explanation details for business logic:")
+    
+    if 'contribution_summary' in instance_explanation:
+        # Sort features by absolute contribution
+        contributions = instance_explanation['contribution_summary']
+        sorted_contributions = sorted(
+            contributions.items(), 
+            key=lambda x: abs(x[1]), 
+            reverse=True
+        )
+        
+        # Show top influencing features
+        print("Top influencing features:")
+        for feature, contribution in sorted_contributions[:3]:
+            direction = "increases" if contribution > 0 else "decreases"
+            print(f"  {feature}: {contribution:+.4f} ({direction} probability)")
+        
+        # Example business logic based on explanation
+        if probability > 0.7 and any(abs(contrib) > 0.1 for _, contrib in sorted_contributions[:3]):
+            print("High confidence prediction with strong feature support")
+        elif probability > 0.5 and probability < 0.7:
+            print("Moderate confidence prediction - consider additional checks")
+        else:
+            print("Low confidence prediction - manual review recommended")
     
     print("\n")
 

@@ -16,6 +16,7 @@ import joblib
 from .preprocessing import AutoPreprocessor
 from .models import ModelWrapper, AutoModelSelector, EnsembleClassifier, get_default_params
 from .evaluation import ComprehensiveEvaluator, MetricsCalculator, VisualizationGenerator
+from .explainer import ModelExplainer
 from .utils import validate_input_data, save_model, load_model, Timer, suppress_warnings
 
 
@@ -82,6 +83,7 @@ class BinaryClassifier(BaseEstimator, ClassifierMixin):
         self.feature_names_in_ = None
         self.classes_ = None
         self.training_metrics_ = None
+        self.explainer_ = None
         
     def _log(self, message: str) -> None:
         """Log message if verbose mode is enabled."""
@@ -231,6 +233,25 @@ class BinaryClassifier(BaseEstimator, ClassifierMixin):
             self._log("Calculating training metrics...")
             self._calculate_training_metrics(X_processed, y_processed)
             
+            # Initialize explainer if explain is enabled
+            if self.explain_enabled:
+                self._log("Initializing model explainer...")
+                # Get feature names after preprocessing if available
+                try:
+                    feature_names = self.get_feature_names_out()
+                except Exception:
+                    feature_names = None
+                    
+                try:
+                    self.explainer_ = ModelExplainer(
+                        model=self.model_, 
+                        X_train=X_processed,
+                        feature_names=feature_names,
+                        verbose=self.verbose
+                    )
+                except Exception:
+                    self.explainer_ = None
+            
         self._log(f"Training completed in {timer.elapsed_time:.2f} seconds")
         return self
     
@@ -311,12 +332,89 @@ class BinaryClassifier(BaseEstimator, ClassifierMixin):
     def explain(self, 
                X: Optional[Union[np.ndarray, pd.DataFrame]] = None,
                top_features: int = 20) -> Dict[str, Any]:
-        """Explain model predictions and feature importance."""
+        """Explain model predictions and feature importance.
+        
+        Args:
+            X: Data to explain (for SHAP and LIME explanations). If None, only global
+               explanations based on the model are provided.
+            top_features: Number of top features to include in feature importance.
+            
+        Returns:
+            Dictionary containing various explanations.
+        """
         if not self.is_fitted_:
             raise ValueError("Model not fitted. Call fit() first.")
         
-        explanations = {}
+        # Initialize explanations dictionary with model metadata
+        explanations = {
+            'model_type': self.model,
+            'optimal_threshold': self.optimal_threshold_,
+        }
         
+        if hasattr(self, 'training_metrics_') and self.training_metrics_:
+            explanations['training_performance'] = self.training_metrics_
+        
+        # If explainer is not initialized but explain is enabled, try to create it
+        if not hasattr(self, 'explainer_') or self.explainer_ is None:
+            if hasattr(self, 'explain_enabled') and self.explain_enabled:
+                self._log("Model explainer not initialized. Trying to create one.")
+                try:
+                    # Get processed data for background
+                    X_sample = X if X is not None else pd.DataFrame({col: [0] for col in self.feature_names_in_})
+                    X_processed = self.preprocessor_.transform(X_sample)
+                    
+                    # Get feature names
+                    try:
+                        feature_names = self.get_feature_names_out()
+                    except:
+                        feature_names = None
+                    
+                    # Create explainer
+                    from .explainer import ModelExplainer
+                    self.explainer_ = ModelExplainer(
+                        model=self.model_,
+                        X_train=X_processed,
+                        feature_names=feature_names,
+                        verbose=self.verbose
+                    )
+                except Exception as e:
+                    self._log(f"Failed to create explainer: {e}")
+                    self.explainer_ = None
+            
+            # If explainer still not available, use basic feature importance
+            if not hasattr(self, 'explainer_') or self.explainer_ is None:
+                self._log("Using basic feature importance extraction.")
+                self._extract_basic_feature_importance(explanations, top_features)
+                return explanations
+        
+        # Use the ModelExplainer for advanced explanations
+        try:
+            # Get global explanations (feature importance, SHAP values, etc.)
+            if X is not None:
+                # Preprocess the data if needed
+                X_processed = self.preprocessor_.transform(X)
+                
+                # Get global explanations
+                global_explanations = self.explainer_.explain_global(X_processed)
+                explanations.update(global_explanations)
+                
+                # If we have SHAP values, extract feature importance from them
+                if 'shap_values' in global_explanations:
+                    self._extract_shap_feature_importance(explanations, global_explanations, top_features)
+            
+            # If no global explanations or SHAP feature importance, fall back to basic extraction
+            if 'feature_importance' not in explanations:
+                self._extract_basic_feature_importance(explanations, top_features)
+                
+        except Exception as e:
+            self._log(f"Warning: Could not generate explanations with ModelExplainer: {e}")
+            # Fall back to basic feature importance
+            self._extract_basic_feature_importance(explanations, top_features)
+        
+        return explanations
+        
+    def _extract_basic_feature_importance(self, explanations: Dict[str, Any], top_features: int = 20) -> None:
+        """Extract basic feature importance directly from the model."""
         try:
             # Feature importance (if available)
             if hasattr(self.model_, 'feature_importances_'):
@@ -348,17 +446,196 @@ class BinaryClassifier(BaseEstimator, ClassifierMixin):
                 )
                 
                 explanations['feature_importance'] = dict(sorted_features[:top_features])
-            
-            # Add model-specific information
-            explanations['model_type'] = self.model
-            explanations['optimal_threshold'] = self.optimal_threshold_
-            
-            if hasattr(self, 'training_metrics_') and self.training_metrics_:
-                explanations['training_performance'] = self.training_metrics_
-                
         except Exception as e:
-            self._log(f"Warning: Could not generate explanations: {e}")
+            self._log(f"Warning: Could not extract basic feature importance: {e}")
+            
+    def _extract_shap_feature_importance(self, explanations: Dict[str, Any], 
+                                        global_explanations: Dict[str, Any],
+                                        top_features: int = 20) -> None:
+        """Extract feature importance from SHAP values."""
+        try:
+            if 'shap_feature_importance' in global_explanations:
+                feature_names = self.get_feature_names_out()
+                importance_values = global_explanations['shap_feature_importance']
+                
+                # Create feature importance dictionary
+                feature_importance = dict(zip(feature_names, importance_values))
+                
+                # Sort by importance
+                sorted_features = sorted(
+                    feature_importance.items(), 
+                    key=lambda x: abs(x[1]), 
+                    reverse=True
+                )
+                
+                explanations['feature_importance'] = dict(sorted_features[:top_features])
+        except Exception as e:
+            self._log(f"Warning: Could not extract SHAP feature importance: {e}")
+    
+    def explain_instance(self, instance: Union[np.ndarray, pd.DataFrame, pd.Series], 
+                         feature_names: List[str] = None) -> Dict[str, Any]:
+        """Explain a single prediction.
         
+        Args:
+            instance: Single instance to explain (as array, DataFrame row, or Series)
+            feature_names: Feature names for the instance (used for LIME)
+            
+        Returns:
+            Dictionary containing explanations for the instance.
+        """
+        if not self.is_fitted_:
+            raise ValueError("Model not fitted. Call fit() first.")
+            
+        # Convert instance to appropriate format
+        if isinstance(instance, pd.DataFrame):
+            if len(instance) != 1:
+                raise ValueError("Instance must be a single example (one row)")
+            instance_array = instance.values[0]
+        elif isinstance(instance, pd.Series):
+            instance_array = instance.values
+        else:
+            instance_array = instance
+            
+        # Preprocess the instance if needed
+        if hasattr(self, 'preprocessor_') and self.preprocessor_ is not None:
+            # Create a DataFrame with one row for preprocessing
+            if isinstance(instance, (pd.DataFrame, pd.Series)):
+                X_instance = instance.to_frame().T if isinstance(instance, pd.Series) else instance
+            else:
+                X_instance = pd.DataFrame([instance], columns=self.feature_names_in_)
+                
+            # Preprocess
+            instance_processed = self.preprocessor_.transform(X_instance)
+            
+            # Get the processed instance as array
+            if isinstance(instance_processed, np.ndarray):
+                instance_array = instance_processed[0]
+            else:
+                # Handle other return types if necessary
+                instance_array = instance_processed.values[0] if hasattr(instance_processed, 'values') else instance_processed[0]
+        
+        # Use explainer to explain the instance
+        explanations = {}
+        
+        if self.explainer_ is not None:
+            # Get feature names for processed data if available
+            if feature_names is None and hasattr(self, 'get_feature_names_out'):
+                try:
+                    feature_names = self.get_feature_names_out()
+                except:
+                    pass
+                    
+            # Get local explanations
+            local_explanations = self.explainer_.explain_instance(instance_array, feature_names)
+            explanations.update(local_explanations)
+            
+        return explanations
+    
+    def explain_instance(self, instance: Union[np.ndarray, pd.DataFrame, pd.Series], 
+                         feature_names: List[str] = None) -> Dict[str, Any]:
+        """Explain a single prediction.
+        
+        Args:
+            instance: Single instance to explain (as array, DataFrame row, or Series)
+            feature_names: Feature names for the instance (used for LIME)
+            
+        Returns:
+            Dictionary containing explanations for the instance.
+        """
+        if not self.is_fitted_:
+            raise ValueError("Model not fitted. Call fit() first.")
+            
+        # Convert instance to appropriate format
+        if isinstance(instance, pd.DataFrame):
+            if len(instance) != 1:
+                raise ValueError("Instance must be a single example (one row)")
+            instance_array = instance.values[0]
+        elif isinstance(instance, pd.Series):
+            instance_array = instance.values
+        else:
+            instance_array = instance
+            
+        # Preprocess the instance if needed
+        if hasattr(self, 'preprocessor_') and self.preprocessor_ is not None:
+            # Create a DataFrame with one row for preprocessing
+            if isinstance(instance, (pd.DataFrame, pd.Series)):
+                X_instance = instance.to_frame().T if isinstance(instance, pd.Series) else instance
+            else:
+                X_instance = pd.DataFrame([instance], columns=self.feature_names_in_)
+                
+            # Preprocess
+            instance_processed = self.preprocessor_.transform(X_instance)
+            
+            # Get the processed instance as array
+            if isinstance(instance_processed, np.ndarray):
+                instance_array = instance_processed[0]
+            else:
+                # Handle other return types if necessary
+                instance_array = instance_processed.values[0] if hasattr(instance_processed, 'values') else instance_processed[0]
+        
+        # Use explainer to explain the instance
+        explanations = {}
+        
+        # If explainer doesn't exist, try to create one
+        if not hasattr(self, 'explainer_') or self.explainer_ is None:
+            # Try to initialize explainer
+            self._log("Explainer not initialized, trying to create one for instance explanation")
+            try:
+                # Create a sample for background data
+                X_sample = pd.DataFrame({col: [0] for col in self.feature_names_in_})
+                X_processed = self.preprocessor_.transform(X_sample)
+                
+                # Get feature names
+                try:
+                    feature_names_out = self.get_feature_names_out()
+                except:
+                    feature_names_out = None
+                
+                # Create explainer
+                from .explainer import ModelExplainer
+                self.explainer_ = ModelExplainer(
+                    model=self.model_,
+                    X_train=X_processed,
+                    feature_names=feature_names_out,
+                    verbose=self.verbose
+                )
+            except Exception as e:
+                self._log(f"Failed to create explainer: {e}")
+                self.explainer_ = None
+        
+        # Get direct prediction results
+        try:
+            # Create a DataFrame with one row
+            if isinstance(instance, (pd.DataFrame, pd.Series)):
+                X_instance = instance.to_frame().T if isinstance(instance, pd.Series) else instance
+            else:
+                X_instance = pd.DataFrame([instance], columns=self.feature_names_in_)
+                
+            # Get prediction
+            prediction = self.predict(X_instance)[0]
+            prediction_proba = self.predict_proba(X_instance)[0]
+            
+            explanations['prediction'] = prediction
+            explanations['prediction_proba'] = prediction_proba
+        except Exception as e:
+            self._log(f"Failed to get prediction: {e}")
+        
+        # Use explainer for detailed explanations if available
+        if hasattr(self, 'explainer_') and self.explainer_ is not None:
+            # Get feature names for processed data if available
+            if feature_names is None and hasattr(self, 'get_feature_names_out'):
+                try:
+                    feature_names = self.get_feature_names_out()
+                except:
+                    pass
+                    
+            # Get local explanations
+            try:
+                local_explanations = self.explainer_.explain_instance(instance_array, feature_names)
+                explanations.update(local_explanations)
+            except Exception as e:
+                self._log(f"Failed to get explanations from explainer: {e}")
+            
         return explanations
     
     def get_feature_names_out(self) -> List[str]:
